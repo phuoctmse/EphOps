@@ -44,7 +44,4 @@ data/
 # Husky hooks (CI-only, not needed in image)
 .husky/
 
-# Test files (optional - remove if tests run in container)
-test/
-*.spec.ts
-*.e2e-spec.ts
+# Test files are intentionally included so Docker test target can run Jest coverage.

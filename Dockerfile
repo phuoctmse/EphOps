@@ -146,5 +146,5 @@ COPY --chown=nodejs:nodejs . .
 # Switch to non-root user
 USER nodejs
 
-# Run tests with coverage
-CMD ["npm", "run", "test:cov"]
+# Run tests with coverage during build target execution
+RUN npm run test:cov
