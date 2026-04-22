@@ -31,8 +31,7 @@ FROM base AS deps
 COPY --chown=nodejs:nodejs package*.json ./
 
 # Install production dependencies
-RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    npm ci --omit=dev --ignore-scripts && \
+RUN npm ci --omit=dev --ignore-scripts && \
     npm cache clean --force
 
 # ========================================
@@ -44,8 +43,7 @@ FROM base AS build-deps
 COPY --chown=nodejs:nodejs package*.json ./
 
 # Install all dependencies
-RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    npm ci --no-audit --no-fund && \
+RUN npm ci --no-audit --no-fund && \
     npm cache clean --force
 
 # ========================================
