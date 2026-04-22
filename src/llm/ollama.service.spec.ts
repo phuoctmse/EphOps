@@ -1,11 +1,18 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { OllamaService } from './ollama.service';
-import { AgentDecisionSchema } from '../common/schemas/agent-decision.schema';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
 
 describe('OllamaService', () => {
   let service: OllamaService;
-  let mockFetch: jest.Mock;
+  let mockFetch: jest.MockedFunction<typeof fetch>;
 
   beforeEach(async () => {
     mockFetch = jest.fn();
@@ -52,25 +59,39 @@ describe('OllamaService', () => {
         },
       };
 
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          message: { content: JSON.stringify(mockDecision) },
-        }),
-      });
+      mockFetch.mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            message: { content: JSON.stringify(mockDecision) },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      );
 
-      const result = await service.analyzePrompt('I need a test server', 't3.micro', 1);
+      const result = await service.analyzePrompt(
+        'I need a test server',
+        't3.micro',
+        1,
+      );
 
       expect(result.decision).toBe('APPROVE');
       expect(result.reasoning).toBeDefined();
       expect(result.config?.instanceType).toBe('t3.micro');
-      expect(result.costAnalysis.estimatedHourly).toBe(0.0104);
+      expect(result.costAnalysis).toBeDefined();
+      expect(result.costAnalysis?.estimatedHourly).toBe(0.0104);
     });
 
     it('should fallback to auto-approve when Ollama is unavailable', async () => {
       mockFetch.mockRejectedValue(new Error('Connection refused'));
 
-      const result = await service.analyzePrompt('I need a test server', 't3.micro', 1);
+      const result = await service.analyzePrompt(
+        'I need a test server',
+        't3.micro',
+        1,
+      );
 
       expect(result.decision).toBe('APPROVE');
       expect(result.reasoning).toContain('LLM unavailable');
@@ -78,13 +99,18 @@ describe('OllamaService', () => {
     });
 
     it('should handle non-OK HTTP response', async () => {
-      mockFetch.mockResolvedValue({
-        ok: false,
-        status: 500,
-        text: async () => 'Internal Server Error',
-      });
+      mockFetch.mockResolvedValue(
+        new Response('Internal Server Error', {
+          status: 500,
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+      );
 
-      const result = await service.analyzePrompt('I need a test server', 't4g.nano', 0.5);
+      const result = await service.analyzePrompt(
+        'I need a test server',
+        't4g.nano',
+        0.5,
+      );
 
       expect(result.decision).toBe('APPROVE');
       expect(result.reasoning).toContain('LLM unavailable');
@@ -92,12 +118,17 @@ describe('OllamaService', () => {
 
     it('should validate LLM response with Zod', async () => {
       // Return invalid JSON that doesn't match schema
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          message: { content: JSON.stringify({ invalid: 'data' }) },
-        }),
-      });
+      mockFetch.mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            message: { content: JSON.stringify({ invalid: 'data' }) },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      );
 
       const result = await service.analyzePrompt('test', 't3.micro', 1);
 
@@ -109,7 +140,7 @@ describe('OllamaService', () => {
 
   describe('isAvailable', () => {
     it('should return true when Ollama is reachable', async () => {
-      mockFetch.mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue(new Response(null, { status: 200 }));
       await expect(service.isAvailable()).resolves.toBe(true);
     });
 
