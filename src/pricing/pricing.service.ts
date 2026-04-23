@@ -159,6 +159,9 @@ export class PricingService {
       const refreshed = await this.prisma.pricingCache.findMany({
         where: { region },
       });
+      if (refreshed.length === 0) {
+        return { ...PRICING_TABLE };
+      }
       return Object.fromEntries(
         refreshed.map((e) => [e.instanceType, e.hourlyCost]),
       );
@@ -180,6 +183,10 @@ export class PricingService {
 
   async getPricingTableForPrompt(region: string): Promise<string> {
     const table = await this.getPricingTable(region);
+    if (Object.keys(table).length === 0) {
+      return this.formatStaticPricingTable();
+    }
+
     const lines = Object.entries(table).map(
       ([type, cost]) => `- ${type}: $${cost.toFixed(4)}/hour`,
     );
@@ -265,5 +272,11 @@ export class PricingService {
     }
 
     return true;
+  }
+
+  private formatStaticPricingTable(): string {
+    return Object.entries(PRICING_TABLE)
+      .map(([type, cost]) => `- ${type}: $${cost.toFixed(4)}/hour`)
+      .join('\n');
   }
 }

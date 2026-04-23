@@ -73,11 +73,14 @@ export class OllamaService {
 
     const pricingContext = await this.pricingService
       .getPricingTableForPrompt(this.region)
-      .catch(() =>
-        Object.entries(PRICING_TABLE)
-          .map(([type, cost]) => `- ${type}: $${cost.toFixed(4)}/hour`)
-          .join('\n'),
-      );
+      .then((context) => {
+        if (context.trim().length === 0) {
+          throw new Error('Empty pricing context');
+        }
+
+        return context;
+      })
+      .catch(() => this.formatStaticPricingTable());
 
     const systemPrompt = BASE_SYSTEM_PROMPT.replace(
       '{{PRICING_TABLE}}',
@@ -161,5 +164,11 @@ Analyze this request. Should we APPROVE or REJECT? Respond with JSON.`;
     } catch {
       return false;
     }
+  }
+
+  private formatStaticPricingTable(): string {
+    return Object.entries(PRICING_TABLE)
+      .map(([type, cost]) => `- ${type}: $${cost.toFixed(4)}/hour`)
+      .join('\n');
   }
 }
