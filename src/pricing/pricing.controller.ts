@@ -1,5 +1,14 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
   ApiSecurity,
   ApiTags,
   ApiOperation,
@@ -8,7 +17,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { PricingService } from './pricing.service';
-import { SyncPricingDto } from './dto/pricing.dto';
+import { SUPPORTED_PRICING_REGIONS, SyncPricingDto } from './dto/pricing.dto';
 import { ApiKeyGuard } from '../common/guards/api-key.guard';
 import { PricingSyncRateLimitGuard } from '../common/guards/pricing-sync-rate-limit.guard';
 
@@ -33,13 +42,22 @@ export class PricingController {
   @UseGuards(PricingSyncRateLimitGuard)
   @ApiOperation({ summary: 'Synchronize pricing data from AWS' })
   @ApiResponse({ status: 200, description: 'Pricing sync completed' })
+  @ApiBadRequestResponse({ description: 'Unsupported pricing region' })
   @ApiUnauthorizedResponse({ description: 'Missing or invalid API key' })
   @ApiTooManyRequestsResponse({
     description: 'Pricing sync rate limit exceeded',
   })
   async syncPricing(@Body() dto: SyncPricingDto) {
     const region = dto.region ?? 'us-east-1';
-    await this.pricingService.syncRegion(region);
+    if (!(SUPPORTED_PRICING_REGIONS as readonly string[]).includes(region)) {
+      throw new BadRequestException(`Unsupported pricing region: ${region}`);
+    }
+
+    const synced = await this.pricingService.syncRegion(region);
+    if (!synced) {
+      throw new BadRequestException(`Unsupported pricing region: ${region}`);
+    }
+
     return { message: `Pricing synced for ${region}` };
   }
 }

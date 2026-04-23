@@ -63,11 +63,11 @@ export class PricingService {
     });
   }
 
-  async syncRegion(region: string): Promise<void> {
+  async syncRegion(region: string): Promise<boolean> {
     const location = REGION_TO_LOCATION[region];
     if (!location) {
       this.logger.warn(`Unknown region ${region}, skipping sync`);
-      return;
+      return false;
     }
 
     this.logger.log(`Syncing EC2 pricing for region: ${region} (${location})`);
@@ -114,6 +114,7 @@ export class PricingService {
     }
 
     this.logger.log(`Pricing sync completed for ${region}`);
+    return true;
   }
 
   async getHourlyCost(instanceType: string, region: string): Promise<number> {
