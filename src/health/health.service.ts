@@ -43,6 +43,8 @@ export class HealthService {
       throw new HttpException(
         {
           status: 'down',
+          message: 'Database health check failed',
+          error: err.message ?? 'Unknown error',
           timestamp: new Date().toISOString(),
           uptime,
           checks: {
@@ -65,7 +67,14 @@ export class HealthService {
         `Readiness check failed: ${err.message ?? 'Unknown error'}`,
         err.stack ?? String(err),
       );
-      throw new HttpException({ ready: false }, HttpStatus.SERVICE_UNAVAILABLE);
+      throw new HttpException(
+        {
+          ready: false,
+          message: 'Service is not ready',
+          error: err.message ?? 'Unknown error',
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
     }
   }
 
