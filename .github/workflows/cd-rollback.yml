@@ -3,9 +3,6 @@ name: CD - Emergency Rollback (ECS)
 on:
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: 'Image tag to rollback to (optional - defaults to previous)'
-        required: false
       reason:
         description: 'Reason for rollback'
         required: true
@@ -13,173 +10,113 @@ on:
 permissions:
   contents: read
   deployments: write
+  id-token: write
 
 concurrency:
   group: cd-production
   cancel-in-progress: false
 
 jobs:
-  validate-rollback:
-    name: Validate Rollback Request
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    outputs:
-      target_image: ${{ steps.determine.outputs.target_image }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Determine rollback target
-        id: determine
-        run: |
-          if [ -z "${{ github.event.inputs.image_tag }}" ]; then
-            echo "target_image=previous" >> $GITHUB_OUTPUT
-            echo "Using previous task definition revision"
-          else
-            echo "target_image=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
-            echo "Using specified image: ${{ github.event.inputs.image_tag }}"
-          fi
-
-      - name: Log rollback intent
-        run: |
-          echo "🔙 Emergency Rollback Initiated"
-          echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          echo "Reason: ${{ github.event.inputs.reason }}"
-          echo "Triggered By: ${{ github.actor }}"
-
   execute-rollback:
     name: Execute Production Rollback (ECS)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: validate-rollback
+    environment: production
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
-      - name: Execute rollback script
-        id: rollback
-        run: |
-          chmod +x ./scripts/rollback-prod.sh
-          if [ -n "${{ needs.validate-rollback.outputs.target_image }}" ] && [ "${{ needs.validate-rollback.outputs.target_image }}" != "previous" ]; then
-            ./scripts/rollback-prod.sh \
-              --image "${{ needs.validate-rollback.outputs.target_image }}" \
-              --cluster ephops-prod-cluster \
-              --service ephops-prod-service \
-              --region us-east-1 \
-              --timeout 300
-          else
-            ./scripts/rollback-prod.sh \
-              --cluster ephops-prod-cluster \
-              --service ephops-prod-service \
-              --region us-east-1 \
-              --timeout 300
-          fi
-        env:
-          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-
-      - name: Verify rollback health
-        id: verify
-        run: |
-          chmod +x ./scripts/health-check.sh
-          ./scripts/health-check.sh "${{ secrets.PROD_HEALTH_URL }}" 5 30s
-        continue-on-error: true
-
-      - name: Create deployment status
+      - name: Create rollback deployment record
+        id: create-deployment
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
         with:
           script: |
-            const status = '${{ steps.verify.outcome }}' === 'success' ? 'success' : 'failure';
-            const description = status === 'success' 
-              ? 'Production rollback successful'
-              : 'Production rollback executed but health check failed';
-            
-            await github.rest.repos.createDeploymentStatus({
+            const deployment = await github.rest.repos.createDeployment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               ref: context.ref,
               environment: 'production',
-              state: status,
-              description: description,
-              environment_url: '${{ secrets.PROD_HEALTH_URL }}/health',
+              description: 'Emergency rollback: ${{ github.event.inputs.reason }}',
+              auto_merge: false,
             });
+            core.setOutput('deployment_id', deployment.data.id);
 
-      - name: Save rollback report
-        if: always()
+      - name: Rollback to previous task definition
+        id: rollback
         run: |
-          cat > rollback-report.md <<EOF
-          # Production Rollback Report (ECS Fargate)
-          
-          **Status**: ${{ job.status }}
-          **Rollback Target**: ${{ needs.validate-rollback.outputs.target_image }}
-          **Executed At**: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          **Triggered By**: ${{ github.actor }}
-          
-          ## Reason for Rollback
-          ${{ github.event.inputs.reason }}
-          
-          ## Cluster Details
-          - Cluster: ephops-prod-cluster
-          - Service: ephops-prod-service
-          - Region: us-east-1
-          - Launch Type: FARGATE
-          
-          ## Verification
-          - Health Check Result: ${{ steps.verify.outcome }}
-          - Rollback Script Exit Code: ${{ steps.rollback.outcome }}
-          
-          ## Next Steps
-          1. Investigate root cause of deployment failure
-          2. Review ECS task definitions and logs
-          3. Fix issues in source code
-          4. Prepare and test fix branch
-          5. Create new pull request for review
-          6. Verify in staging environment
-          7. Redeploy to production with fixed code
-          
-          ## CloudWatch Logs
-          Check logs with:
-          \`\`\`bash
-          aws logs tail /ecs/ephops-prod --follow
-          \`\`\`
-          
-          ## Manual Verification
-          \`\`\`bash
-          # Check ECS service status
-          aws ecs describe-services \
+          echo "🔙 Emergency rollback — reason: ${{ github.event.inputs.reason }}"
+
+          PREV=$(aws ecs list-task-definition-revisions \
+            --family-prefix ephops-prod \
+            --region us-east-1 \
+            --sort DESCENDING \
+            --query 'taskDefinitionArns[1]' \
+            --output text)
+
+          if [ -z "$PREV" ] || [ "$PREV" = "None" ]; then
+            echo "::error::No previous task definition found"
+            exit 1
+          fi
+
+          echo "Rolling back to: $PREV"
+          aws ecs update-service \
+            --cluster ephops-prod-cluster \
+            --service ephops-prod-service \
+            --task-definition "$PREV" \
+            --region us-east-1
+
+          aws ecs wait services-stable \
             --cluster ephops-prod-cluster \
             --services ephops-prod-service \
             --region us-east-1
-          
-          # List running tasks
-          aws ecs list-tasks \
-            --cluster ephops-prod-cluster \
-            --service-name ephops-prod-service \
-            --region us-east-1
-          
-          # Check health endpoint
-          curl https://${{ secrets.PROD_HEALTH_URL }}/health
-          \`\`\`
-          EOF
-          cat rollback-report.md
 
-      - name: Upload rollback report
+          echo "prev_task_def=$PREV" >> $GITHUB_OUTPUT
+          echo "::notice::Rollback complete — service restored to $PREV"
+
+      - name: Verify health after rollback
+        id: verify
+        continue-on-error: true
+        run: |
+          BASE="${{ secrets.PROD_HEALTH_URL }}"
+          for i in $(seq 1 10); do
+            curl -sf "$BASE/health" && break
+            [ $i -lt 10 ] && sleep 5 || { echo "::warning::Health check failed after rollback"; exit 1; }
+          done
+
+      - name: Create deployment status
         if: always()
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce4ec1 # v4
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
         with:
-          name: rollback-report
-          path: rollback-report.md
-          retention-days: 90
+          script: |
+            const success = '${{ steps.verify.outcome }}' === 'success';
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: ${{ steps.create-deployment.outputs.deployment_id }},
+              state: success ? 'success' : 'failure',
+              description: success
+                ? 'Rollback successful'
+                : 'Rollback executed but health check failed',
+              environment_url: '${{ secrets.PROD_HEALTH_URL }}/health',
+            });
 
-      - name: Notify on rollback failure
+      - name: Rollback evidence summary
+        if: always()
+        run: |
+          {
+            echo "## Rollback Evidence"
+            echo "- Commit SHA: ${{ github.sha }}"
+            echo "- Target Environment: production"
+            echo "- Reason: ${{ github.event.inputs.reason }}"
+            echo "- Rolled Back Task Definition: ${{ steps.rollback.outputs.prev_task_def || 'unknown' }}"
+            echo "- Health Verify Result: ${{ steps.verify.outcome }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Alert on failure
         if: failure()
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
         with:
@@ -188,7 +125,6 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: 1,
-              body: `⚠️ **PRODUCTION ALERT**: Rollback execution failed!\n\n- Reason: ${{ github.event.inputs.reason }}\n- Triggered by: @${{ github.actor }}\n- Check artifacts for details`
-            }).catch(() => console.log('Could not post comment'));
-            
-            core.setFailed('Rollback verification failed - manual intervention required')
+              body: `⚠️ **PRODUCTION ALERT**: Rollback failed!\n- Reason: ${{ github.event.inputs.reason }}\n- Triggered by: @${{ github.actor }}`
+            }).catch(() => {});
+            core.setFailed('Rollback failed — manual intervention required');
