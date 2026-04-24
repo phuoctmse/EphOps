@@ -31,6 +31,9 @@ jobs:
         env:
           HUSKY: 0
 
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
       - name: Verify lint
         run: npm run lint:ci
 
