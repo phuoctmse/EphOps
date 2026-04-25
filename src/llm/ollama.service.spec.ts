@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { OllamaService } from './ollama.service';
 import { PricingService } from '../pricing/pricing.service';
+import { PolicyRetrieverService } from '../policy/policy-retriever.service';
 import {
   afterEach,
   beforeEach,
@@ -59,6 +60,12 @@ describe('OllamaService', () => {
                 '- t3.micro: $0.0104/hour\n- t4g.nano: $0.0042/hour',
               ),
             ),
+          },
+        },
+        {
+          provide: PolicyRetrieverService,
+          useValue: {
+            buildContextSnippet: jest.fn(() => ''),
           },
         },
       ],
