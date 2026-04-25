@@ -4,6 +4,8 @@ export interface AppConfig {
   nodeEnv: string;
   ollamaBaseUrl: string;
   ollamaModel: string;
+  ollamaFallbackModel: string;
+  ollamaTimeoutMs: number;
   awsRegion: string;
   awsAccessKeyId: string;
   awsSecretAccessKey: string;
@@ -21,6 +23,8 @@ export default registerAs(
     nodeEnv: process.env['NODE_ENV'] ?? 'local',
     ollamaBaseUrl: process.env['OLLAMA_BASE_URL'] ?? 'http://localhost:11434',
     ollamaModel: process.env['OLLAMA_MODEL'] ?? 'llama3.2',
+    ollamaFallbackModel: process.env['OLLAMA_FALLBACK_MODEL'] ?? '',
+    ollamaTimeoutMs: parseInt(process.env['OLLAMA_TIMEOUT_MS'] ?? '15000', 10),
     awsRegion: process.env['AWS_REGION'] ?? 'us-east-1',
     awsAccessKeyId: process.env['AWS_ACCESS_KEY_ID'] ?? '',
     awsSecretAccessKey: process.env['AWS_SECRET_ACCESS_KEY'] ?? '',
