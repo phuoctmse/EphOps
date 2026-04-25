@@ -10,6 +10,7 @@ import { CleanupWorkerModule } from './cleanup-worker/cleanup-worker.module';
 import { PricingModule } from './pricing/pricing.module';
 import { HealthModule } from './health/health.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { PolicyModule } from './policy/policy.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { MetricsModule } from './metrics/metrics.module';
     PricingModule,
     HealthModule,
     MetricsModule,
+    PolicyModule,
   ],
 })
 export class AppModule {}

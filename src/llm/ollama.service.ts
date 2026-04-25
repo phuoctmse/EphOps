@@ -9,6 +9,7 @@ import {
   type AllowedInstanceType,
 } from '../common/constants/finops.constants';
 import { PricingService } from '../pricing/pricing.service';
+import { PolicyRetrieverService } from '../policy/policy-retriever.service';
 
 const BASE_SYSTEM_PROMPT = `You are a FinOps Infrastructure Agent. Your mission is to analyze test environment requests and provision infrastructure at the lowest possible cost. You must NEVER provision resources outside the free tier or low-cost categories (t3.micro, t4g.nano). If a request exceeds capabilities, you must REJECT it and explain why.
 
@@ -53,6 +54,7 @@ export class OllamaService {
   constructor(
     private readonly configService: ConfigService,
     private readonly pricingService: PricingService,
+    private readonly policyRetriever: PolicyRetrieverService,
   ) {
     this.baseUrl = this.configService.get<string>(
       'app.ollamaBaseUrl',
@@ -100,6 +102,12 @@ export class OllamaService {
       pricingContext,
     );
 
+    // Inject relevant policy/runbook context if available
+    const policyContext = this.policyRetriever.buildContextSnippet(prompt);
+    const augmentedSystemPrompt = policyContext
+      ? `${systemPrompt}\n\n## Relevant Policy Context\n${policyContext}`
+      : systemPrompt;
+
     const userMessage = `User request: "${prompt}"
 Suggested config: instanceType=${instanceType}, ttlHours=${ttlHours}
 Pricing estimate: $${hourlyCost}/hour, total ~$${totalExpected.toFixed(4)}
@@ -129,7 +137,7 @@ Analyze this request. Should we APPROVE or REJECT? Respond with JSON.`;
       try {
         const decision = await this.callOllama(
           currentModel,
-          systemPrompt,
+          augmentedSystemPrompt,
           userMessage,
           hourlyCost,
           totalExpected,
