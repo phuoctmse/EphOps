@@ -1,0 +1,149 @@
+name: CD - Staging Deploy (ECS)
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cd-staging-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  staging-deploy:
+    name: Deploy to Staging (ECS Fargate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    environment: staging
+    env:
+      STAGING_SHA: ${{ github.event.workflow_run.head_sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ env.STAGING_SHA }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: |
+            ephops:staging-${{ env.STAGING_SHA }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Push image to ECR
+        id: push-image
+        run: |
+          AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          ECR_REGISTRY="${AWS_ACCOUNT}.dkr.ecr.us-east-1.amazonaws.com"
+          ECR_REPOSITORY="ephops"
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:staging-${STAGING_SHA}"
+
+          aws ecr get-login-password --region us-east-1 | \
+            docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+          docker tag ephops:staging-${STAGING_SHA} "${IMAGE_URI}"
+          docker push "${IMAGE_URI}"
+
+          echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+
+      - name: Capture image digest
+        id: image-meta
+        run: |
+          DIGEST=$(aws ecr describe-images \
+            --repository-name ephops \
+            --image-ids imageTag=staging-${STAGING_SHA} \
+            --region us-east-1 \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+
+          echo "image_digest=${DIGEST}" >> $GITHUB_OUTPUT
+
+      - name: Render ECS task definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ephops-staging
+          container-name: app
+          image: ${{ steps.push-image.outputs.image_uri }}
+
+      - name: Deploy to ECS staging
+        id: deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          cluster: ephops-staging-cluster
+          service: ephops-staging-service
+          wait-for-service-stability: true
+
+      - name: Smoke tests
+        id: smoke-tests
+        run: |
+          BASE="${{ secrets.STAGING_HEALTH_URL }}"
+
+          echo "--- Test 1: Liveness ---"
+          for i in $(seq 1 10); do
+            curl -sf "$BASE/health/live" && break
+            [ $i -lt 10 ] && sleep 3 || { echo "::error::Liveness check failed"; exit 1; }
+          done
+
+          echo "--- Test 2: Readiness ---"
+          for i in $(seq 1 10); do
+            curl -sf "$BASE/health/ready" && break
+            [ $i -lt 10 ] && sleep 3 || { echo "::error::Readiness check failed"; exit 1; }
+          done
+
+          echo "--- Test 3 & 4: Health + Database ---"
+          HEALTH=$(curl -sf "$BASE/health")
+          echo "$HEALTH" | grep -q '"status":"ok"'   || { echo "::error::Health status not ok"; exit 1; }
+          echo "$HEALTH" | grep -q '"database":"ok"' || { echo "::error::Database health failed"; exit 1; }
+
+          echo "--- Test 5: Response time < 1s ---"
+          TIME=$(curl -sf -o /dev/null -w "%{time_total}" "$BASE/health")
+          awk "BEGIN{exit !($TIME < 1.0)}" || echo "::warning::Response time high: ${TIME}s"
+
+          echo "--- Test 6: Sandbox endpoint ---"
+          CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$BASE/sandbox" || true)
+          echo "$CODE" | grep -qE "^(200|401)$" || { echo "::error::Sandbox returned $CODE"; exit 1; }
+
+          echo "::notice::All smoke tests passed"
+
+      - name: Report smoke test result
+        if: always()
+        run: |
+          if [ "${{ steps.smoke-tests.outcome }}" = "success" ]; then
+            echo "::notice title=Smoke Tests::✅ All smoke tests passed on staging"
+          else
+            echo "::error title=Smoke Tests::❌ Smoke tests failed on staging"
+          fi
+
+      - name: Release evidence summary
+        if: always()
+        run: |
+          {
+            echo "## Staging Release Evidence"
+            echo "- Commit SHA: ${STAGING_SHA}"
+            echo "- Image Tag: staging-${STAGING_SHA}"
+            echo "- Image URI: ${{ steps.push-image.outputs.image_uri }}"
+            echo "- Image Digest: ${{ steps.image-meta.outputs.image_digest }}"
+            echo "- Target Environment: staging"
+            echo "- Smoke Test Result: ${{ steps.smoke-tests.outcome }}"
+          } >> "$GITHUB_STEP_SUMMARY"
