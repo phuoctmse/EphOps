@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SandboxEnvService } from './sandbox-env.service';
 import { SandboxEnvRepository } from './sandbox-env.repository';
@@ -170,7 +171,7 @@ describe('SandboxEnvService', () => {
           prompt: 'Need a big server',
           instanceType: 'm5.large' as unknown as 't3.micro',
         }),
-      ).rejects.toThrow(UnauthorizedInstanceTypeError);
+      ).rejects.toThrow(BadRequestException);
 
       expect(mockActionLogRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ toolCalled: 'guardrails_block' }),
