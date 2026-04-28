@@ -40,7 +40,7 @@ jobs:
           HUSKY: 0
 
       - name: Generate Prisma Client
-        run: pnpm --filter @ephops/api exec prisma generate
+        run: pnpm exec prisma generate --schema=prisma/schema.prisma
 
       - name: Lint — api
         run: pnpm --filter @ephops/api run lint:ci
@@ -113,10 +113,10 @@ jobs:
           HUSKY: 0
 
       - name: Generate Prisma Client
-        run: pnpm --filter @ephops/api exec prisma generate
+        run: pnpm exec prisma generate --schema=prisma/schema.prisma
 
       - name: Run database migrations
-        run: pnpm --filter @ephops/api exec prisma migrate deploy
+        run: pnpm exec prisma migrate deploy --schema=prisma/schema.prisma
         env:
           DATABASE_URL: postgresql://postgres:${{ secrets.E2E_DB_PASSWORD }}@localhost:5432/ephops_test
 
