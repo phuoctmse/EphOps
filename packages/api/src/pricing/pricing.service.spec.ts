@@ -1,9 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { PricingClient, GetProductsCommand } from '@aws-sdk/client-pricing';
 import { PricingService } from './pricing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import appConfig from '../common/config/app.config';
 
 type CachedPrice = {
   hourlyCost: number;
@@ -102,15 +102,10 @@ describe('PricingService', () => {
       providers: [
         PricingService,
         {
-          provide: ConfigService,
+          provide: appConfig.KEY,
           useValue: {
-            get: (key: string, defaultValue?: string) => {
-              const config: Record<string, string> = {
-                'app.awsAccessKeyId': 'test',
-                'app.awsSecretAccessKey': 'test',
-              };
-              return config[key] ?? defaultValue;
-            },
+            awsAccessKeyId: 'test',
+            awsSecretAccessKey: 'test',
           },
         },
         {

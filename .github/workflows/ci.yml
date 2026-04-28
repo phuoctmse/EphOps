@@ -60,6 +60,79 @@ jobs:
       - name: Build — web
         run: pnpm --filter @ephops/web run build
 
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: quality-gates
+
+    services:
+      postgresql:
+        image: postgres:18-alpine3.23
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
+          POSTGRES_DB: ephops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ephops_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      floci:
+        image: hectorvent/floci:latest
+        ports:
+          - 4566:4566
+        options: >-
+          --health-cmd "wget -qO- http://localhost:4566/ || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 5s
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @ephops/api exec prisma generate
+
+      - name: Run database migrations
+        run: pnpm --filter @ephops/api exec prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:${{ secrets.E2E_DB_PASSWORD }}@localhost:5432/ephops_test
+
+      - name: Run E2E tests
+        run: pnpm --filter @ephops/api run test:e2e
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://postgres:${{ secrets.E2E_DB_PASSWORD }}@localhost:5432/ephops_test
+          API_KEY: ${{ secrets.E2E_API_KEY }}
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT: http://localhost:4566
+          OLLAMA_BASE_URL: http://localhost:11434
+          OLLAMA_MODEL: qwen2.5:1.5b
+
   dependency-security:
     name: Dependency Security Gate
     runs-on: ubuntu-latest
