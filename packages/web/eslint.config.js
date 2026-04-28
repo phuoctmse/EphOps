@@ -4,6 +4,8 @@ import ts from 'typescript-eslint'
 
 export default [
   { ignores: ['dist', 'node_modules'] },
+  js.configs.recommended,
+  ...ts.configs.recommended,
   {
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
@@ -11,7 +13,6 @@ export default [
       sourceType: 'module',
       globals: globals.browser,
     },
-    extends: [js.configs.recommended, ...ts.configs.recommended],
     rules: {
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
