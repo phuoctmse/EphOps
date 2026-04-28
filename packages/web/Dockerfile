@@ -27,7 +27,7 @@ COPY packages/web           packages/web/
 RUN pnpm --filter @ephops/web run build
 
 # ── Production (nginx) ───────────────────
-FROM nginx:1.27-alpine AS production
+FROM nginx:1.28-alpine AS production
 
 COPY --from=build /app/packages/web/dist /usr/share/nginx/html
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
