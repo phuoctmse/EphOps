@@ -1,3 +1,24 @@
 # Temporary ignore for Trivy image scan
 # Remove once the base image/dependency chain is upgraded to a fixed picomatch release.
 CVE-2026-33671
+
+# nginx:1.28-alpine (Alpine 3.23.x) — upstream OS packages not yet patched in any available nginx image.
+# Track: https://github.com/nginxinc/docker-nginx/releases
+# Remove once nginx ships an image with Alpine >= edge containing the fixed versions.
+
+# openssl: 3.5.6-r0 not yet in nginx alpine image
+CVE-2026-31789
+CVE-2026-28387
+CVE-2026-28388
+CVE-2026-28389
+CVE-2026-28390
+
+# libpng: 1.6.56-r0 not yet in nginx alpine image
+CVE-2026-33416
+CVE-2026-33636
+
+# musl: 1.2.5-r23 not yet in nginx alpine image
+CVE-2026-40200
+
+# zlib: 1.3.2-r0 not yet in nginx alpine image
+CVE-2026-22184

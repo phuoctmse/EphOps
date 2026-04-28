@@ -87,12 +87,6 @@ jobs:
           - 4566:4566
         env:
           FLOCI_STORAGE_MODE: memory
-        options: >-
-          --health-cmd "nc -z localhost 4566 || exit 1"
-          --health-interval 3s
-          --health-timeout 5s
-          --health-retries 20
-          --health-start-period 10s
 
     steps:
       - name: Checkout
@@ -116,6 +110,19 @@ jobs:
 
       - name: Generate Prisma Client
         run: pnpm exec prisma generate --schema=prisma/schema.prisma
+
+      - name: Wait for floci to be ready
+        run: |
+          echo "Waiting for floci on port 4566..."
+          for i in $(seq 1 30); do
+            if bash -c 'echo > /dev/tcp/localhost/4566' 2>/dev/null; then
+              echo "floci is up (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i: not ready, waiting 2s..."
+            sleep 2
+          done
+          echo "floci did not become ready in time" && exit 1
 
       - name: Run database migrations
         run: pnpm exec prisma migrate deploy --schema=prisma/schema.prisma
