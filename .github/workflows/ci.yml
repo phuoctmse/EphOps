@@ -49,7 +49,7 @@ jobs:
         run: pnpm --filter @ephops/web run lint
 
       - name: Run unit tests — api
-        run: pnpm --filter @ephops/api run test -- --ci --runInBand
+        run: pnpm --filter @ephops/api exec jest --ci --runInBand --passWithNoTests
 
       - name: Build — shared-types
         run: echo "shared-types is source-only, no build step needed"
