@@ -13,7 +13,10 @@ import { OllamaService } from '../llm/ollama.service';
 import { GuardrailsService } from '../guardrails/guardrails.service';
 import { ActionLogRepository } from '../action-log/action-log.repository';
 import { CreateSandboxEnvDto } from './dto/sandbox-env.dto';
-import { PRICING_TABLE } from '../common/constants/finops.constants';
+import {
+  MAX_TOTAL_EXPECTED_COST,
+  PRICING_TABLE,
+} from '../common/constants/finops.constants';
 import { ProvisioningError } from '../common/exceptions/finops.exceptions';
 import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -52,6 +55,8 @@ export class SandboxEnvService {
       hourlyCost = PRICING_TABLE[instanceType] ?? 0;
     }
     const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
+    const totalExpected = Number((hourlyCost * ttlHours).toFixed(6));
+    const policyCompliant = this.isPolicyCompliant(ttlHours, totalExpected);
 
     // Guardrails: instance type check (no DB needed, safe to run outside transaction)
     try {
@@ -155,18 +160,54 @@ export class SandboxEnvService {
         );
       }
 
+      const finalDecision = policyCompliant
+        ? decision.decision === 'REJECT'
+          ? {
+              ...decision,
+              decision: 'APPROVE' as const,
+              reasoning: `Provision approved. Policy check passed for ${instanceType} at ${ttlHours}h with estimated total $${totalExpected.toFixed(4)}.`,
+              llmReasoning: decision.reasoning,
+              config: {
+                instanceType,
+                ttlHours,
+                region,
+              },
+              costAnalysis: {
+                estimatedHourly: hourlyCost,
+                totalExpected,
+              },
+              guardrailsTriggered: false,
+            }
+          : decision
+        : {
+            ...decision,
+            decision: 'REJECT' as const,
+            reasoning: `Provision rejected by guardrails. Allowed instance types are t3.micro/t4g.nano, TTL must stay within 0.5-${maxTtl}h, and total expected cost must stay at or below $${MAX_TOTAL_EXPECTED_COST.toFixed(3)}.`,
+            llmReasoning: decision.reasoning,
+            config: {
+              instanceType,
+              ttlHours,
+              region,
+            },
+            costAnalysis: {
+              estimatedHourly: hourlyCost,
+              totalExpected,
+            },
+            guardrailsTriggered: true,
+          };
+
       // Log AI reasoning with latency
       await this.actionLogRepo.create({
         envId: env.id,
-        agentReasoning: decision.reasoning,
+        agentReasoning: finalDecision.reasoning,
         toolCalled: 'log_reasoning',
-        output: JSON.stringify({ ...decision, fallbackUsed }),
+        output: JSON.stringify({ ...finalDecision, fallbackUsed }),
         durationMs,
       });
 
-      if (decision.decision === 'REJECT') {
-        await this.repo.updateToFailed(env.id, decision.reasoning);
-        return { ...env, status: 'FAILED', decision };
+      if (finalDecision.decision === 'REJECT') {
+        await this.repo.updateToFailed(env.id, finalDecision.reasoning);
+        return { ...env, status: 'FAILED', decision: finalDecision };
       }
 
       // Provision EC2 instance
@@ -198,6 +239,14 @@ export class SandboxEnvService {
       await this.repo.updateToFailed(env.id, message);
       throw new ProvisioningError(message);
     }
+  }
+
+  private isPolicyCompliant(ttlHours: number, totalExpected: number): boolean {
+    return (
+      ttlHours >= 0.5 &&
+      ttlHours <= this.config.maxTtlHours &&
+      totalExpected <= MAX_TOTAL_EXPECTED_COST
+    );
   }
 
   async findAll() {

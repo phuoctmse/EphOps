@@ -5,6 +5,10 @@ export const AgentDecisionSchema = z.object({
   reasoning: z
     .string()
     .describe('Explanation for why this configuration was chosen'),
+  llmReasoning: z
+    .string()
+    .optional()
+    .describe('Raw reasoning returned by the LLM before any policy override'),
   config: z
     .object({
       instanceType: z.enum(['t3.micro', 't4g.nano']),

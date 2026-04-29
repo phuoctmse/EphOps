@@ -88,7 +88,7 @@ describe('SandboxEnvService', () => {
                 expiresAt: new Date(Date.now() + 3600000),
               }),
             },
-          };
+          } as unknown;
           return fn(tx);
         }),
     };
@@ -173,18 +173,37 @@ describe('SandboxEnvService', () => {
       );
     });
 
-    it('should mark env as FAILED when LLM rejects', async () => {
+    it('should override a policy-compliant LLM reject and still provision', async () => {
       mockGuardrails.validateInstanceType.mockReturnValue(undefined);
       mockPricing.getHourlyCost.mockResolvedValue(0.0104);
       mockLlm.analyzePrompt.mockResolvedValue(rejectResult);
+      mockEc2.runInstance.mockResolvedValue('i-0abc123');
+      mockEc2.createTags.mockResolvedValue(undefined);
+      mockRepo.updateStatus.mockResolvedValue({
+        id: 'env-1',
+        status: 'RUNNING',
+        resourceId: 'i-0abc123',
+      });
       mockRepo.updateToFailed.mockResolvedValue({});
       mockActionLogRepo.create.mockResolvedValue({});
 
-      await service.provision({ prompt: 'Too expensive request' });
+      await service.provision({
+        prompt: 'I need a Linux test server for 1 hour',
+        instanceType: 't3.micro',
+        ttlHours: 1,
+      });
 
-      expect(mockRepo.updateToFailed).toHaveBeenCalledWith(
-        'env-1',
-        'Request too expensive for budget.',
+      expect(mockRepo.updateToFailed).not.toHaveBeenCalled();
+      expect(mockEc2.runInstance).toHaveBeenCalledWith('t3.micro');
+      expect(mockRepo.updateStatus).toHaveBeenCalledWith('env-1', 'RUNNING', {
+        resourceId: 'i-0abc123',
+      });
+      expect(mockActionLogRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolCalled: 'log_reasoning',
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          agentReasoning: expect.stringContaining('Provision approved.'),
+        }),
       );
     });
 

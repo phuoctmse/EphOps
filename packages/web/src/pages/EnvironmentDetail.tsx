@@ -79,6 +79,103 @@ export default function EnvironmentDetail() {
     }
   }
 
+  const reasoningLog = logs.find((log) => log.toolCalled === 'log_reasoning')
+  const displayAgentReasoning =
+    environment?.agentReasoning || reasoningLog?.agentReasoning || logs[0]?.agentReasoning || 'No agent reasoning available'
+
+  const formatLogOutput = (output: unknown): string => {
+    if (output === null || output === undefined) {
+      return 'No output available'
+    }
+
+    if (typeof output === 'string') {
+      try {
+        const parsed = JSON.parse(output) as unknown
+        return JSON.stringify(parsed, null, 2)
+      } catch {
+        return output
+      }
+    }
+
+    if (typeof output === 'number' || typeof output === 'boolean') {
+      return String(output)
+    }
+
+    try {
+      return JSON.stringify(output, null, 2)
+    } catch {
+      return String(output)
+    }
+  }
+
+  const tryParseJson = (output: unknown): unknown => {
+    if (typeof output !== 'string') {
+      return output
+    }
+
+    try {
+      return JSON.parse(output) as unknown
+    } catch {
+      return output
+    }
+  }
+
+  const renderLogOutputDetails = (log: ActionLog) => {
+    const parsedOutput = tryParseJson(log.output)
+
+    if (log.toolCalled === 'log_reasoning' && parsedOutput && typeof parsedOutput === 'object' && !Array.isArray(parsedOutput)) {
+      const payload = parsedOutput as Record<string, unknown>
+
+      return (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <div className="rounded border border-ephops-border-subtle bg-ephops-surface px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wider text-ephops-text-secondary">Decision</p>
+              <p className="mt-1 font-mono text-sm text-ephops-text-primary">
+                {typeof payload.decision === 'string' ? payload.decision : 'N/A'}
+              </p>
+            </div>
+            <div className="rounded border border-ephops-border-subtle bg-ephops-surface px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wider text-ephops-text-secondary">Config</p>
+              <p className="mt-1 font-mono text-sm text-ephops-text-primary">
+                {payload.config ? 'present' : 'missing'}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-ephops-text-secondary mb-1">
+              Reasoning
+            </p>
+            <p className="text-sm text-ephops-text-primary">
+              {typeof payload.reasoning === 'string' ? payload.reasoning : log.agentReasoning}
+            </p>
+          </div>
+
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-ephops-text-secondary mb-1">
+              Output
+            </p>
+            <pre className="bg-ephops-elevated border border-ephops-border-default rounded p-3 text-xs font-mono text-ephops-text-primary overflow-x-auto">
+              {JSON.stringify(payload, null, 2)}
+            </pre>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wider text-ephops-text-secondary mb-1">
+          Output
+        </p>
+        <pre className="bg-ephops-elevated border border-ephops-border-default rounded p-3 text-xs font-mono text-ephops-text-primary overflow-x-auto">
+          {formatLogOutput(parsedOutput)}
+        </pre>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -182,7 +279,7 @@ export default function EnvironmentDetail() {
             <p className="text-xs font-medium uppercase tracking-wider text-ephops-text-secondary">
               Agent Reasoning
             </p>
-            <p className="text-sm text-ephops-text-primary mt-2">{environment.agentReasoning}</p>
+            <p className="text-sm text-ephops-text-primary mt-2">{displayAgentReasoning}</p>
           </Card>
         </>
       )}
@@ -236,14 +333,7 @@ export default function EnvironmentDetail() {
                       </p>
                     </div>
 
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-wider text-ephops-text-secondary mb-1">
-                        Output
-                      </p>
-                      <pre className="bg-ephops-elevated border border-ephops-border-default rounded p-3 text-xs font-mono text-ephops-text-primary overflow-x-auto">
-                        {JSON.stringify(log.output, null, 2)}
-                      </pre>
-                    </div>
+                    {renderLogOutputDetails(log)}
                   </div>
                 )}
               </div>

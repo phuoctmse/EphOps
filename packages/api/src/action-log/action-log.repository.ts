@@ -5,6 +5,13 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ActionLogRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  private normalizeDurationMs<T extends { durationMs: number | null }>(log: T) {
+    return {
+      ...log,
+      durationMs: log.durationMs ?? 0,
+    };
+  }
+
   async create(data: {
     envId: string;
     agentReasoning: string;
@@ -12,19 +19,28 @@ export class ActionLogRepository {
     output: string;
     durationMs?: number;
   }) {
-    return this.prisma.actionLog.create({ data });
+    return this.prisma.actionLog.create({
+      data: {
+        ...data,
+        durationMs: data.durationMs ?? 0,
+      },
+    });
   }
 
   async findByEnvId(envId: string) {
-    return this.prisma.actionLog.findMany({
+    const logs = await this.prisma.actionLog.findMany({
       where: { envId },
       orderBy: { timestamp: 'desc' },
     });
+
+    return logs.map((log) => this.normalizeDurationMs(log));
   }
 
   async findAll() {
-    return this.prisma.actionLog.findMany({
+    const logs = await this.prisma.actionLog.findMany({
       orderBy: { timestamp: 'desc' },
     });
+
+    return logs.map((log) => this.normalizeDurationMs(log));
   }
 }

@@ -57,11 +57,11 @@ export function mapSandboxEnvToEnvironment(dto: SandboxEnvResponseDto): Environm
 }
 
 export function mapActionLogResponseToActionLog(dto: ActionLogResponseDto): ActionLog {
-  let output: Record<string, unknown> = {}
+  let output: unknown = dto.output
   try {
-    output = JSON.parse(dto.output) as Record<string, unknown>
+    output = JSON.parse(dto.output) as unknown
   } catch {
-    output = {}
+    output = dto.output
   }
 
   return {

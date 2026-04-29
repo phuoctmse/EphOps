@@ -35,7 +35,7 @@ export interface ActionLog {
   toolCalled: string
   durationMs: number
   agentReasoning: string
-  output: Record<string, unknown>
+  output: unknown
   createdAt: string
 }
 
