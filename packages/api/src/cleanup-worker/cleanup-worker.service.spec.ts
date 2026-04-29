@@ -37,8 +37,7 @@ describe('CleanupWorkerService', () => {
     it('should trigger cleanup reconciliation on startup', async () => {
       mockSandboxEnvRepo.findExpiredRunning.mockResolvedValue([]);
 
-      service.onModuleInit();
-      await Promise.resolve();
+      await service.onModuleInit();
 
       expect(mockSandboxEnvRepo.findExpiredRunning).toHaveBeenCalledTimes(1);
     });
