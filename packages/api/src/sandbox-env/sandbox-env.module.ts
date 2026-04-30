@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { SandboxEnvController } from './sandbox-env.controller';
 import { SandboxEnvService } from './sandbox-env.service';
 import { SandboxEnvRepository } from './sandbox-env.repository';
+import { ProvisionEventsService } from './provision-events.service';
 import { AwsEc2Module } from '../aws-ec2/aws-ec2.module';
 import { LlmModule } from '../llm/llm.module';
 import { GuardrailsModule } from '../guardrails/guardrails.module';
@@ -19,7 +20,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     PrismaModule,
   ],
   controllers: [SandboxEnvController],
-  providers: [SandboxEnvService, SandboxEnvRepository],
+  providers: [SandboxEnvService, SandboxEnvRepository, ProvisionEventsService],
   exports: [SandboxEnvService, SandboxEnvRepository],
 })
 export class SandboxEnvModule {}

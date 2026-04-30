@@ -5,7 +5,10 @@ import {
   Delete,
   Body,
   Param,
+  Query,
+  Sse,
   UseGuards,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -13,7 +16,10 @@ import {
   ApiResponse,
   ApiSecurity,
 } from '@nestjs/swagger';
+import { Observable, map } from 'rxjs';
+import { randomUUID } from 'crypto';
 import { SandboxEnvService } from './sandbox-env.service';
+import { ProvisionEventsService } from './provision-events.service';
 import {
   CreateSandboxEnvDto,
   SandboxEnvResponseDto,
@@ -25,7 +31,18 @@ import { ApiKeyGuard } from '../common/guards/api-key.guard';
 @UseGuards(ApiKeyGuard)
 @Controller('sandbox')
 export class SandboxEnvController {
-  constructor(private readonly service: SandboxEnvService) {}
+  constructor(
+    private readonly service: SandboxEnvService,
+    private readonly provisionEvents: ProvisionEventsService,
+  ) {}
+
+  @Post('stream')
+  @ApiOperation({ summary: 'Create a provision stream and return a requestId' })
+  createStream(): { requestId: string } {
+    const requestId = randomUUID();
+    this.provisionEvents.create(requestId);
+    return { requestId };
+  }
 
   @Post()
   @ApiOperation({ summary: 'Provision a new ephemeral environment' })
@@ -42,8 +59,25 @@ export class SandboxEnvController {
     status: 403,
     description: 'Instance type not allowed or concurrency limit reached',
   })
-  async provision(@Body() dto: CreateSandboxEnvDto) {
-    return this.service.provision(dto);
+  async provision(
+    @Body() dto: CreateSandboxEnvDto,
+    @Query('requestId') requestId?: string,
+  ) {
+    return this.service.provision(dto, requestId);
+  }
+
+  @Sse('events')
+  @ApiOperation({ summary: 'Stream provision progress events via SSE' })
+  streamEvents(
+    @Query('requestId') requestId: string,
+  ): Observable<MessageEvent> {
+    const subject = this.provisionEvents.get(requestId);
+    if (!subject) {
+      throw new NotFoundException(
+        `No active provision stream for requestId: ${requestId}`,
+      );
+    }
+    return subject.pipe(map((event) => ({ data: event }) as MessageEvent));
   }
 
   @Get()

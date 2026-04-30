@@ -7,6 +7,7 @@ import Button from '../components/Button'
 import ProvisionModal from '../components/ProvisionModal'
 import { fetchEnvironments, fetchFinOpsMetrics } from '../lib/api'
 import { formatUsd } from '../lib/formatters'
+import { useAutoRefresh } from '../lib/useAutoRefresh'
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
@@ -53,6 +54,12 @@ export default function Dashboard() {
   useEffect(() => {
     fetchData()
   }, [])
+
+  // Auto-refresh every 5 s while any environment is in a transient state
+  const hasTransient = environments.some(
+    (e) => e.state === 'CREATING',
+  )
+  useAutoRefresh(fetchData, hasTransient, 5_000)
 
   const mostExpensiveEnvironment = environments.reduce<Environment | null>((maxEnv, env) => {
     if (!maxEnv || env.cost > maxEnv.cost) {

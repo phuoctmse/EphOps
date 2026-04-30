@@ -84,6 +84,58 @@ export async function provisionEnvironment(input: ProvisionInput): Promise<Envir
   return mapSandboxEnvToEnvironment(data)
 }
 
+export async function createProvisionStream(): Promise<string> {
+  const data = await request<{ requestId: string }>('/sandbox/stream', {
+    method: 'POST',
+  })
+  return data.requestId
+}
+
+export interface ProvisionStreamEvent {
+  step: string
+  message: string
+  done?: boolean
+  error?: boolean
+}
+
+export function openProvisionEventStream(
+  requestId: string,
+  onEvent: (event: ProvisionStreamEvent) => void,
+): () => void {
+  const url = `${BASE_URL}/sandbox/events?requestId=${encodeURIComponent(requestId)}&apiKey=${encodeURIComponent(API_KEY)}`
+  const es = new EventSource(url)
+
+  es.onmessage = (e: MessageEvent<string>) => {
+    try {
+      const event = JSON.parse(e.data) as ProvisionStreamEvent
+      onEvent(event)
+      if (event.done || event.error) {
+        es.close()
+      }
+    } catch {
+      // ignore malformed events
+    }
+  }
+
+  es.onerror = () => {
+    es.close()
+  }
+
+  return () => es.close()
+}
+
+export async function provisionEnvironmentWithStream(
+  input: ProvisionInput,
+  requestId: string,
+): Promise<Environment> {
+  const data = await request<SandboxEnvResponseDto>(
+    `/sandbox?requestId=${encodeURIComponent(requestId)}`,
+    { method: 'POST', body: JSON.stringify(input) },
+    PROVISION_TIMEOUT_MS,
+  )
+  return mapSandboxEnvToEnvironment(data)
+}
+
 export async function terminateEnvironment(id: string): Promise<Environment> {
   const data = await request<SandboxEnvResponseDto>(`/sandbox/${id}`, {
     method: 'DELETE',
@@ -96,7 +148,16 @@ export async function fetchActionLogs(envId: string): Promise<ActionLog[]> {
   return data.map(mapActionLogResponseToActionLog)
 }
 
+export async function fetchAllActionLogs(): Promise<ActionLog[]> {
+  const data = await request<ActionLogResponseDto[]>('/action-logs')
+  return data.map(mapActionLogResponseToActionLog)
+}
+
 export async function fetchFinOpsMetrics(): Promise<Metrics> {
   const data = await request<FinOpsMetrics>('/metrics/finops')
   return mapFinOpsMetricsToMetrics(data)
+}
+
+export async function fetchFullFinOpsMetrics(): Promise<FinOpsMetrics> {
+  return request<FinOpsMetrics>('/metrics/finops')
 }

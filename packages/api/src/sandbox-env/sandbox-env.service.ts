@@ -12,6 +12,7 @@ import { AwsEc2Service } from '../aws-ec2/aws-ec2.service';
 import { OllamaService } from '../llm/ollama.service';
 import { GuardrailsService } from '../guardrails/guardrails.service';
 import { ActionLogRepository } from '../action-log/action-log.repository';
+import { ProvisionEventsService } from './provision-events.service';
 import { CreateSandboxEnvDto } from './dto/sandbox-env.dto';
 import {
   MAX_TOTAL_EXPECTED_COST,
@@ -37,12 +38,35 @@ export class SandboxEnvService {
     private readonly guardrailsService: GuardrailsService,
     private readonly actionLogRepo: ActionLogRepository,
     private readonly pricingService: PricingService,
+    private readonly provisionEvents: ProvisionEventsService,
     @Inject(appConfig.KEY)
     private readonly config: ConfigType<typeof appConfig>,
     private readonly prisma: PrismaService,
   ) {}
 
-  async provision(dto: CreateSandboxEnvDto) {
+  async provision(dto: CreateSandboxEnvDto, requestId?: string) {
+    const emit = (step: string, message: string) => {
+      if (requestId) this.provisionEvents.emit(requestId, { step, message });
+    };
+    const emitDone = (message: string) => {
+      if (requestId)
+        this.provisionEvents.emit(requestId, {
+          step: 'done',
+          message,
+          done: true,
+        });
+      if (requestId) this.provisionEvents.complete(requestId);
+    };
+    const emitError = (message: string) => {
+      if (requestId)
+        this.provisionEvents.emit(requestId, {
+          step: 'error',
+          message,
+          error: true,
+        });
+      if (requestId) this.provisionEvents.complete(requestId);
+    };
+
     const maxTtl = this.config.maxTtlHours;
     const region = this.config.awsRegion;
 
@@ -54,6 +78,7 @@ export class SandboxEnvService {
       instanceType = dto.instanceType;
       ttlHours = Math.min(dto.ttlHours ?? 1, maxTtl);
     } else {
+      emit('intent', 'Analyzing your request with LLM…');
       const llmIntentResult = await this.llmService.extractIntent(dto.prompt);
       const { intent, durationMs, fallbackUsed } = llmIntentResult;
 
@@ -72,6 +97,7 @@ export class SandboxEnvService {
         const message =
           error instanceof Error ? error.message : 'Unknown guardrails error';
         this.logger.warn(`Intent validation blocked request: ${message}`);
+        emitError(`Blocked: ${message}`);
 
         const blockedEnv = await this.repo.create({
           prompt: dto.prompt,
@@ -129,6 +155,7 @@ export class SandboxEnvService {
       const message =
         error instanceof Error ? error.message : 'Unknown guardrails error';
       this.logger.warn(`Guardrails blocked request: ${message}`);
+      emitError(`Blocked: ${message}`);
 
       const blockedEnv = await this.repo.create({
         prompt: dto.prompt,
@@ -207,6 +234,7 @@ export class SandboxEnvService {
       });
 
     try {
+      emit('finops', 'Running FinOps guardrails check…');
       const llmResult = await this.llmService.analyzePrompt(
         dto.prompt,
         instanceType as 't3.micro' | 't4g.nano',
@@ -278,9 +306,11 @@ export class SandboxEnvService {
 
       if (finalDecision.decision === 'REJECT') {
         await this.repo.updateToFailed(env.id, finalDecision.reasoning);
+        emitError(`Rejected: ${finalDecision.reasoning}`);
         return { ...env, status: 'FAILED', decision: finalDecision };
       }
 
+      emit('provisioning', `Provisioning ${instanceType} instance…`);
       const instanceId = await this.ec2Service.runInstance(instanceType);
 
       await this.ec2Service.createTags(instanceId, {
@@ -299,11 +329,13 @@ export class SandboxEnvService {
         output: `InstanceId: ${instanceId}`,
       });
 
+      emitDone(`Environment ready — instance ${instanceId}`);
       return updated;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(`Provisioning failed for env ${env.id}: ${message}`);
       await this.repo.updateToFailed(env.id, message);
+      emitError(message);
       throw new ProvisioningError(message);
     }
   }

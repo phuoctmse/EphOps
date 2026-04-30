@@ -2,6 +2,7 @@ import type { Environment } from '@ephops/shared-types'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import StatusBadge from './StatusBadge'
+import TtlBadge from './TtlBadge'
 import { formatUsd } from '../lib/formatters'
 import { terminateEnvironment } from '../lib/api'
 
@@ -85,9 +86,11 @@ export default function EnvironmentTable({ environments, onActionComplete }: Env
               Instances
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ephops-text-secondary">
-              Created
+              TTL
             </th>
-            <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-ephops-text-secondary">
+            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ephops-text-secondary">
+              Created
+            </th>            <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-ephops-text-secondary">
               Actions
             </th>
           </tr>
@@ -119,6 +122,9 @@ export default function EnvironmentTable({ environments, onActionComplete }: Env
                 {formatUsd(env.cost)}
               </td>
               <td className="px-4 py-3 text-sm text-ephops-text-primary">{env.instanceCount}</td>
+              <td className="px-4 py-3">
+                <TtlBadge expiresAt={env.expiresAt} state={env.state} />
+              </td>
               <td className="px-4 py-3 font-mono text-sm text-ephops-text-secondary">
                 {new Date(env.createdAt).toLocaleString()}
               </td>

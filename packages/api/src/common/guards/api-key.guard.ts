@@ -27,10 +27,13 @@ export class ApiKeyGuard implements CanActivate {
       );
     }
 
-    const request = context
-      .switchToHttp()
-      .getRequest<{ headers?: Record<string, unknown> }>();
-    const providedApiKey = this.getApiKeyFromHeaders(request.headers ?? {});
+    const request = context.switchToHttp().getRequest<{
+      headers?: Record<string, unknown>;
+      query?: Record<string, unknown>;
+    }>();
+    const providedApiKey =
+      this.getApiKeyFromHeaders(request.headers ?? {}) ??
+      this.getApiKeyFromQuery(request.query ?? {});
 
     if (!providedApiKey || providedApiKey !== expectedApiKey) {
       throw new UnauthorizedException('Invalid API key');
@@ -51,6 +54,16 @@ export class ApiKeyGuard implements CanActivate {
       return headerValue[0].trim();
     }
 
+    return undefined;
+  }
+
+  private getApiKeyFromQuery(
+    query: Record<string, unknown>,
+  ): string | undefined {
+    const value = query['apiKey'];
+    if (typeof value === 'string') {
+      return value.trim();
+    }
     return undefined;
   }
 }

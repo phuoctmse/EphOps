@@ -9,6 +9,7 @@ export interface Environment {
   state: EnvironmentState
   createdAt: string
   destroyedAt?: string
+  expiresAt?: string | null
   resourceId?: string | null
   cost: number
   region: string

@@ -22,16 +22,35 @@ export interface ActionLogResponseDto {
 }
 
 export interface FinOpsMetrics {
-  cost: {
-    totalIncurredCostUsd: number
+  decisions: {
+    approveCount: number
+    rejectCount: number
+    approveRate: number
+    total: number
+  }
+  guardrails: {
+    blockCount: number
+    instanceTypeBlockCount: number
+    concurrencyBlockCount: number
   }
   llm: {
+    fallbackUsedCount: number
+    fallbackRate: number
     avgDecisionLatencyMs: number | null
+    p95DecisionLatencyMs: number | null
+  }
+  cost: {
+    totalEstimatedCostUsd: number
+    totalIncurredCostUsd: number
+    avgHourlyCostUsd: number | null
   }
   environments: {
-    totalCount: number
     activeCount: number
+    destroyedCount: number
+    failedCount: number
+    totalCount: number
   }
+  generatedAt: string
 }
 
 function toIsoString(value: string | Date): string {
@@ -49,6 +68,7 @@ export function mapSandboxEnvToEnvironment(dto: SandboxEnvResponseDto): Environm
     instanceCount: 1,
     agentReasoning: '',
     createdAt: toIsoString(dto.createdAt),
+    expiresAt: dto.expiresAt != null ? toIsoString(dto.expiresAt) : null,
     destroyedAt:
       dto.status === 'DESTROYED' && dto.expiresAt !== undefined
         ? toIsoString(dto.expiresAt)
